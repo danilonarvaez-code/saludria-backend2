@@ -1,0 +1,123 @@
+package com.citas.controller;
+
+import com.citas.entity.Cita;
+import com.citas.service.CitaService;
+import com.citas.entity.Usuario;
+import org.springframework.security.core.Authentication;
+
+import jakarta.validation.Valid;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/citas")
+@CrossOrigin(origins = {
+        "http://localhost:5173",
+        "http://localhost:3000"
+})
+public class CitaController {
+
+    @Autowired
+    private CitaService citaService;
+
+    @GetMapping
+    public ResponseEntity<List<Cita>> listarTodas() {
+
+        return ResponseEntity.ok(
+                citaService.obtenerTodas()
+        );
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Cita> buscarPorId(
+            @PathVariable Long id) {
+
+        return citaService.obtenerPorId(id)
+                .map(ResponseEntity::ok)
+                .orElse(
+                        ResponseEntity.notFound().build()
+                );
+    }
+
+    @GetMapping("/usuario/{usuarioId}")
+    public ResponseEntity<List<Cita>>
+    obtenerPorPaciente(
+            @PathVariable Long usuarioId,
+            Authentication authentication) {
+
+        if (esPaciente(authentication) && !esPropioUsuario(authentication, usuarioId)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(citaService.obtenerCitasPorPaciente(usuarioId));
+    }
+
+    @PostMapping
+    public ResponseEntity<Cita> agendarCita(
+            @Valid @RequestBody Cita cita,
+            Authentication authentication) {
+
+        if (esPaciente(authentication) &&
+                (cita.getUsuario() == null || cita.getUsuario().getId() == null ||
+                 !esPropioUsuario(authentication, cita.getUsuario().getId()))) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(citaService.agendarCita(cita));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Cita> actualizar(
+            @PathVariable Long id,
+            @Valid @RequestBody Cita citaDetalles,
+            Authentication authentication) {
+
+        if (esPaciente(authentication)) {
+            Cita existente = citaService.obtenerPorId(id).orElse(null);
+            if (existente == null || existente.getUsuario() == null ||
+                    !esPropioUsuario(authentication, existente.getUsuario().getId())) {
+                return ResponseEntity.status(403).build();
+            }
+            if (citaDetalles.getUsuario() != null && citaDetalles.getUsuario().getId() != null &&
+                    !esPropioUsuario(authentication, citaDetalles.getUsuario().getId())) {
+                return ResponseEntity.status(403).build();
+            }
+        }
+
+        return ResponseEntity.ok(citaService.actualizarCita(id, citaDetalles));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminar(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        if (esPaciente(authentication)) {
+            Cita existente = citaService.obtenerPorId(id).orElse(null);
+            if (existente == null || existente.getUsuario() == null ||
+                    !esPropioUsuario(authentication, existente.getUsuario().getId())) {
+                return ResponseEntity.status(403).build();
+            }
+        }
+
+        citaService.eliminar(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    private boolean esPaciente(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PACIENTE"));
+    }
+
+    private boolean esPropioUsuario(Authentication authentication, Long usuarioId) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof Usuario usuario)) {
+            return false;
+        }
+        return usuario.getId().equals(usuarioId);
+    }
+}
