@@ -2,9 +2,6 @@ package com.citas.entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "usuario")
@@ -14,32 +11,29 @@ public class Usuario {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "El nombre es obligatorio")
-    @Size(min = 3, max = 100,
-            message = "El nombre debe tener entre 3 y 100 caracteres")
     @Column(nullable = false, length = 100)
     private String nombre;
 
-    @NotBlank(message = "El correo es obligatorio")
-    @Email(message = "El correo no tiene un formato válido")
-    @Size(max = 150,
-            message = "El correo no puede superar 150 caracteres")
     @Column(nullable = false, unique = true, length = 150)
     private String correo;
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, length = 255)
     private String password;
 
-    @NotBlank(message = "El rol es obligatorio")
-    @Column(nullable = false, length = 30)
+    @Column(length = 50)
     private String rol;
 
     public Usuario() {
     }
 
-    public Usuario(Long id, String nombre, String correo,
-                   String password, String rol) {
+    public Usuario(
+            Long id,
+            String nombre,
+            String correo,
+            String password,
+            String rol) {
+
         this.id = id;
         this.nombre = nombre;
         this.correo = correo;

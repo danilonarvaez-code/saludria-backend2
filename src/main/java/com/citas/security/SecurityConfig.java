@@ -34,34 +34,59 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**", "/error").permitAll()
-                // Registro público: solo pacientes; el servicio fuerza el rol PACIENTE.
                 .requestMatchers(HttpMethod.POST, "/api/usuarios").permitAll()
-                // Consultar médicos es necesario para agendar una cita.
+
+                // Médicos: todos pueden consultar; solamente ADMIN administra médicos.
                 .requestMatchers(HttpMethod.GET, "/api/medicos", "/api/medicos/**")
                     .hasAnyRole("ADMIN", "MEDICO", "PACIENTE")
-                // Administración de médicos.
-                .requestMatchers("/api/medicos/**")
+                .requestMatchers(HttpMethod.POST, "/api/medicos", "/api/medicos/**")
                     .hasRole("ADMIN")
-                // Administración de usuarios.
-                .requestMatchers("/api/usuarios/**")
+                .requestMatchers(HttpMethod.PUT, "/api/medicos/**")
                     .hasRole("ADMIN")
-                // Citas: el controlador valida además que el paciente solo opere sus propias citas.
+                .requestMatchers(HttpMethod.DELETE, "/api/medicos/**")
+                    .hasRole("ADMIN")
+
+                // Usuarios: administración exclusiva del ADMIN.
+                .requestMatchers(HttpMethod.GET, "/api/usuarios", "/api/usuarios/**")
+                    .hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/usuarios/admin", "/api/usuarios/admin/**")
+                    .hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/usuarios/**")
+                    .hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/usuarios/**")
+                    .hasRole("ADMIN")
+
+                // Citas por propietario.
                 .requestMatchers(HttpMethod.GET, "/api/citas/usuario/**")
+                    .hasAnyRole("PACIENTE", "ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/citas/medico/**")
+                    .hasAnyRole("MEDICO", "ADMIN")
+
+                // GET /api/citas se filtra por rol en CitaController.
+                .requestMatchers(HttpMethod.GET, "/api/citas", "/api/citas/**")
                     .hasAnyRole("ADMIN", "MEDICO", "PACIENTE")
-                .requestMatchers(HttpMethod.GET, "/api/citas/**")
-                    .hasAnyRole("ADMIN", "MEDICO")
-                .requestMatchers(HttpMethod.POST, "/api/citas/**")
-                    .hasAnyRole("ADMIN", "MEDICO", "PACIENTE")
+
+                // Solamente PACIENTE y ADMIN pueden agendar.
+                .requestMatchers(HttpMethod.POST, "/api/citas", "/api/citas/**")
+                    .hasAnyRole("ADMIN", "PACIENTE")
+
+                // Solamente ADMIN puede modificar/eliminar citas.
                 .requestMatchers(HttpMethod.PUT, "/api/citas/**")
-                    .hasAnyRole("ADMIN", "MEDICO", "PACIENTE")
+                    .hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/citas/**")
+                    .hasRole("ADMIN")
+
+                // Detalles: GET para consultar según propietario; POST para médico/ADMIN;
+                // PUT/DELETE exclusivamente ADMIN.
+                .requestMatchers(HttpMethod.GET, "/api/detalle-citas", "/api/detalle-citas/**")
                     .hasAnyRole("ADMIN", "MEDICO", "PACIENTE")
-                // Detalle y reportes.
-                .requestMatchers(HttpMethod.GET, "/api/detalle-citas/**")
+                .requestMatchers(HttpMethod.POST, "/api/detalle-citas", "/api/detalle-citas/**")
                     .hasAnyRole("ADMIN", "MEDICO")
-                .requestMatchers("/api/detalle-citas/**")
-                    .hasAnyRole("ADMIN", "MEDICO")
-                // API pública de Colombia puede ser consultada por usuarios autenticados.
+                .requestMatchers(HttpMethod.PUT, "/api/detalle-citas/**")
+                    .hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/detalle-citas/**")
+                    .hasRole("ADMIN")
+
                 .requestMatchers("/api/colombia/**").authenticated()
                 .anyRequest().authenticated()
             )

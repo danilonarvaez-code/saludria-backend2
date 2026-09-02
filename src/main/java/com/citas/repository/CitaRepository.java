@@ -1,16 +1,21 @@
 package com.citas.repository;
 
 import com.citas.entity.Cita;
-
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-@Repository
 public interface CitaRepository extends JpaRepository<Cita, Long> {
 
+    // =========================================================
+    // CITAS DE UN USUARIO/PACIENTE
+    // =========================================================
+
     List<Cita> findByUsuarioId(Long usuarioId);
+
+    // =========================================================
+    // CITAS DE UN MÉDICO
+    // =========================================================
 
     List<Cita> findByMedicoId(Long medicoId);
 }

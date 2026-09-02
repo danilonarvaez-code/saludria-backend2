@@ -11,9 +11,15 @@ public interface DetalleCitaService {
 
     Optional<DetalleCita> buscarPorId(Long id);
 
+    List<DetalleCita> listarPorUsuario(Long usuarioId);
+
+    List<DetalleCita> listarPorMedico(Long medicoId);
+
     DetalleCita guardar(DetalleCita detalleCita);
 
-    DetalleCita actualizar(Long id, DetalleCita detalleCita);
+    DetalleCita actualizar(
+            Long id,
+            DetalleCita detalleCita);
 
     void eliminar(Long id);
 }

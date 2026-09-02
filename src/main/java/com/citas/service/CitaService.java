@@ -3,21 +3,42 @@ package com.citas.service;
 import com.citas.entity.Cita;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface CitaService {
 
+    // =========================================================
+    // OBTENER TODAS LAS CITAS
+    // =========================================================
+
     List<Cita> obtenerTodas();
 
-    Optional<Cita> obtenerPorId(Long id);
+    // =========================================================
+    // OBTENER CITAS POR USUARIO
+    // =========================================================
 
-    List<Cita> obtenerCitasPorPaciente(Long usuarioId);
+    List<Cita> obtenerCitasPorUsuario(Long usuarioId);
+
+    // =========================================================
+    // OBTENER CITAS POR MÉDICO
+    // =========================================================
 
     List<Cita> obtenerCitasPorMedico(Long medicoId);
 
-    Cita agendarCita(Cita cita);
+    // =========================================================
+    // GUARDAR
+    // =========================================================
 
-    Cita actualizarCita(Long id, Cita citaActualizada);
+    Cita guardar(Cita cita);
+
+    // =========================================================
+    // ACTUALIZAR
+    // =========================================================
+
+    Cita actualizar(Long id, Cita cita);
+
+    // =========================================================
+    // ELIMINAR
+    // =========================================================
 
     void eliminar(Long id);
 }

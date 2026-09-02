@@ -4,375 +4,500 @@ import com.citas.entity.Cita;
 import com.citas.entity.Medico;
 import com.citas.entity.Usuario;
 import com.citas.repository.MedicoRepository;
+import com.citas.repository.UsuarioRepository;
 import com.citas.service.CitaService;
-
-import jakarta.validation.Valid;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/citas")
-@CrossOrigin(origins = {
-        "http://localhost:5173",
-        "http://localhost:3000"
-})
+@CrossOrigin(origins = "*")
 public class CitaController {
 
-    @Autowired
-    private CitaService citaService;
+    private final CitaService citaService;
+    private final MedicoRepository medicoRepository;
+    private final UsuarioRepository usuarioRepository;
 
-    @Autowired
-    private MedicoRepository medicoRepository;
+    public CitaController(
+            CitaService citaService,
+            MedicoRepository medicoRepository,
+            UsuarioRepository usuarioRepository) {
 
-    // =========================================================
-    // ADMIN: consultar todas las citas
-    // =========================================================
+        this.citaService = citaService;
+        this.medicoRepository = medicoRepository;
+        this.usuarioRepository = usuarioRepository;
+    }
+
+    // ============================================================
+    // GET TODAS LAS CITAS SEGÚN EL ROL
+    // ============================================================
+
     @GetMapping
-    public ResponseEntity<List<Cita>> listarTodas(
-            Authentication authentication) {
+    public ResponseEntity<?> obtenerCitas(Authentication authentication) {
 
-        if (!esAdmin(authentication)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!autenticado(authentication)) {
+            return forbidden("No autenticado.");
         }
 
-        return ResponseEntity.ok(citaService.obtenerTodas());
-    }
+        String rol = obtenerRol(authentication);
 
-    // =========================================================
-    // Buscar una cita por ID
-    // ADMIN puede consultar cualquier cita.
-    // PACIENTE y MEDICO solo su propia cita.
-    // =========================================================
-    @GetMapping("/{id}")
-    public ResponseEntity<Cita> buscarPorId(
-            @PathVariable Long id,
-            Authentication authentication) {
-
-        Cita cita = citaService.obtenerPorId(id).orElse(null);
-
-        if (cita == null) {
-            return ResponseEntity.notFound().build();
+        // ADMIN: puede ver todas
+        if ("ROLE_ADMIN".equals(rol)) {
+            return ResponseEntity.ok(citaService.obtenerTodas());
         }
 
-        if (esAdmin(authentication)) {
-            return ResponseEntity.ok(cita);
-        }
+        // PACIENTE: solamente sus propias citas
+        if ("ROLE_PACIENTE".equals(rol)) {
 
-        if (esPaciente(authentication)) {
+            Usuario usuario = buscarUsuario(authentication);
 
-            if (cita.getUsuario() == null ||
-                    !esPropioUsuario(authentication,
-                            cita.getUsuario().getId())) {
-
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            if (usuario == null) {
+                return forbidden("No se encontró el usuario autenticado.");
             }
 
-            return ResponseEntity.ok(cita);
+            return ResponseEntity.ok(
+                    citaService.obtenerCitasPorUsuario(usuario.getId())
+            );
         }
 
-        if (esMedico(authentication)) {
+        // MÉDICO: solamente sus citas asignadas
+        if ("ROLE_MEDICO".equals(rol)) {
 
-            if (cita.getMedico() == null ||
-                    !esPropioMedico(authentication,
-                            cita.getMedico().getId())) {
+            Medico medico = buscarMedico(authentication);
 
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            if (medico == null) {
+                return forbidden("No se encontró médico asociado al usuario.");
             }
 
-            return ResponseEntity.ok(cita);
+            System.out.println(
+                    "Médico autenticado: ID=" + medico.getId()
+                            + " | Nombre=" + medico.getNombre()
+            );
+
+            return ResponseEntity.ok(
+                    citaService.obtenerCitasPorMedico(medico.getId())
+            );
         }
 
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return forbidden("Rol no autorizado.");
     }
 
-    // =========================================================
-    // PACIENTE: consultar sus propias citas
-    // =========================================================
+    // ============================================================
+    // CITAS DE UN USUARIO
+    // ============================================================
+
     @GetMapping("/usuario/{usuarioId}")
-    public ResponseEntity<List<Cita>> obtenerPorPaciente(
+    public ResponseEntity<?> obtenerPorUsuario(
             @PathVariable Long usuarioId,
             Authentication authentication) {
 
-        if (!esPaciente(authentication)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!autenticado(authentication)) {
+            return forbidden("No autenticado.");
         }
 
-        if (!esPropioUsuario(authentication, usuarioId)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        String rol = obtenerRol(authentication);
+
+        // ADMIN puede consultar cualquier paciente
+        if ("ROLE_ADMIN".equals(rol)) {
+            return ResponseEntity.ok(
+                    citaService.obtenerCitasPorUsuario(usuarioId)
+            );
         }
 
-        return ResponseEntity.ok(
-                citaService.obtenerCitasPorPaciente(usuarioId)
-        );
+        // PACIENTE solamente puede consultar sus propias citas
+        if ("ROLE_PACIENTE".equals(rol)) {
+
+            Usuario usuario = buscarUsuario(authentication);
+
+            if (usuario != null &&
+                    usuario.getId().equals(usuarioId)) {
+
+                return ResponseEntity.ok(
+                        citaService.obtenerCitasPorUsuario(usuarioId)
+                );
+            }
+
+            return forbidden(
+                    "No puede consultar citas de otro paciente."
+            );
+        }
+
+        return forbidden("No autorizado.");
     }
 
-    // =========================================================
-    // MEDICO: consultar únicamente sus citas
-    // =========================================================
+    // ============================================================
+    // CITAS DE UN MÉDICO
+    // ============================================================
+
     @GetMapping("/medico/{medicoId}")
-    public ResponseEntity<List<Cita>> obtenerPorMedico(
+    public ResponseEntity<?> obtenerPorMedico(
             @PathVariable Long medicoId,
             Authentication authentication) {
 
-        if (!esMedico(authentication)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!autenticado(authentication)) {
+            return forbidden("No autenticado.");
         }
 
-        if (!esPropioMedico(authentication, medicoId)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        String rol = obtenerRol(authentication);
+
+        // ADMIN puede consultar cualquier médico
+        if ("ROLE_ADMIN".equals(rol)) {
+
+            return ResponseEntity.ok(
+                    citaService.obtenerCitasPorMedico(medicoId)
+            );
+        }
+
+        // MÉDICO solamente puede consultar sus propias citas
+        if ("ROLE_MEDICO".equals(rol)) {
+
+            Medico medico = buscarMedico(authentication);
+
+            if (medico == null) {
+                return forbidden(
+                        "No se encontró médico asociado al usuario."
+                );
+            }
+
+            if (!medico.getId().equals(medicoId)) {
+                return forbidden(
+                        "No puede consultar citas de otro médico."
+                );
+            }
+
+            return ResponseEntity.ok(
+                    citaService.obtenerCitasPorMedico(medicoId)
+            );
+        }
+
+        return forbidden("No autorizado.");
+    }
+
+    // ============================================================
+    // CREAR CITA
+    // ============================================================
+
+    @PostMapping
+    public ResponseEntity<?> crear(
+            @RequestBody Cita cita,
+            Authentication authentication) {
+
+        if (!autenticado(authentication)) {
+            return forbidden("No autenticado.");
+        }
+
+        String rol = obtenerRol(authentication);
+
+        // --------------------------------------------------------
+        // ADMIN
+        // --------------------------------------------------------
+
+        if ("ROLE_ADMIN".equals(rol)) {
+
+            return ResponseEntity
+                    .status(HttpStatus.CREATED)
+                    .body(citaService.guardar(cita));
+        }
+
+        // --------------------------------------------------------
+        // PACIENTE
+        // --------------------------------------------------------
+
+        if ("ROLE_PACIENTE".equals(rol)) {
+
+            Usuario usuario = buscarUsuario(authentication);
+
+            System.out.println(
+                    "=== CREANDO CITA COMO PACIENTE ==="
+            );
+
+            System.out.println(
+                    "Authentication name: "
+                            + authentication.getName()
+            );
+
+            System.out.println(
+                    "Rol: " + rol
+            );
+
+            if (usuario != null) {
+
+                System.out.println(
+                        "Usuario autenticado encontrado: ID="
+                                + usuario.getId()
+                                + " | Correo="
+                                + usuario.getCorreo()
+                );
+
+            } else {
+
+                System.out.println(
+                        "Usuario autenticado encontrado: NULL"
+                );
+            }
+
+            // Validar usuario autenticado
+            if (usuario == null) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body("Usuario autenticado no válido.");
+            }
+
+            // Validar usuario enviado
+            if (cita == null ||
+                    cita.getUsuario() == null ||
+                    cita.getUsuario().getId() == null) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body("Debe indicar el usuario de la cita.");
+            }
+
+            // El paciente solamente puede crear citas para sí mismo
+            if (!usuario.getId().equals(
+                    cita.getUsuario().getId())) {
+
+                return forbidden(
+                        "No puede crear una cita para otro paciente."
+                );
+            }
+
+            // Validar médico
+            if (cita.getMedico() == null ||
+                    cita.getMedico().getId() == null) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body("Debe indicar un médico.");
+            }
+
+            Long medicoId = cita.getMedico().getId();
+
+            if (!medicoRepository.existsById(medicoId)) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body(
+                                "El médico con ID "
+                                        + medicoId
+                                        + " no existe."
+                        );
+            }
+
+            System.out.println(
+                    "Médico seleccionado: ID=" + medicoId
+            );
+
+            // Crear cita
+            Cita citaGuardada = citaService.guardar(cita);
+
+            return ResponseEntity
+                    .status(HttpStatus.CREATED)
+                    .body(citaGuardada);
+        }
+
+        // --------------------------------------------------------
+        // MÉDICO
+        // --------------------------------------------------------
+
+        if ("ROLE_MEDICO".equals(rol)) {
+
+            return forbidden(
+                    "El médico no puede registrar ni agendar citas."
+            );
+        }
+
+        return forbidden("Rol no autorizado.");
+    }
+
+    // ============================================================
+    // ACTUALIZAR CITA
+    // SOLO ADMIN
+    // ============================================================
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> actualizar(
+            @PathVariable Long id,
+            @RequestBody Cita cita,
+            Authentication authentication) {
+
+        if (!autenticado(authentication)) {
+            return forbidden("No autenticado.");
+        }
+
+        if (!"ROLE_ADMIN".equals(obtenerRol(authentication))) {
+
+            return forbidden(
+                    "Solo el administrador puede modificar citas."
+            );
         }
 
         return ResponseEntity.ok(
-                citaService.obtenerCitasPorMedico(medicoId)
+                citaService.actualizar(id, cita)
         );
     }
 
-    // =========================================================
-    // AGENDAR CITA
-    // PACIENTE solo puede crear citas para sí mismo.
-    // ADMIN puede crear citas.
-    // =========================================================
-    @PostMapping
-    public ResponseEntity<Cita> agendarCita(
-            @Valid @RequestBody Cita cita,
-            Authentication authentication) {
-
-        if (esPaciente(authentication)) {
-
-            if (cita.getUsuario() == null ||
-                    cita.getUsuario().getId() == null ||
-                    !esPropioUsuario(
-                            authentication,
-                            cita.getUsuario().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-        } else if (!esAdmin(authentication)) {
-
-            return ResponseEntity.status(
-                    HttpStatus.FORBIDDEN
-            ).build();
-        }
-
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(citaService.agendarCita(cita));
-    }
-
-    // =========================================================
-    // ACTUALIZAR CITA
-    // =========================================================
-    @PutMapping("/{id}")
-    public ResponseEntity<Cita> actualizar(
-            @PathVariable Long id,
-            @Valid @RequestBody Cita citaDetalles,
-            Authentication authentication) {
-
-        Cita existente = citaService.obtenerPorId(id).orElse(null);
-
-        if (existente == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        // ADMIN puede modificar cualquier cita
-        if (esAdmin(authentication)) {
-            return ResponseEntity.ok(
-                    citaService.actualizarCita(id, citaDetalles)
-            );
-        }
-
-        // PACIENTE solo puede modificar sus propias citas
-        if (esPaciente(authentication)) {
-
-            if (existente.getUsuario() == null ||
-                    !esPropioUsuario(
-                            authentication,
-                            existente.getUsuario().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-
-            if (citaDetalles.getUsuario() != null &&
-                    citaDetalles.getUsuario().getId() != null &&
-                    !esPropioUsuario(
-                            authentication,
-                            citaDetalles.getUsuario().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-
-            return ResponseEntity.ok(
-                    citaService.actualizarCita(id, citaDetalles)
-            );
-        }
-
-        // MEDICO solo puede modificar sus propias citas
-        if (esMedico(authentication)) {
-
-            if (existente.getMedico() == null ||
-                    !esPropioMedico(
-                            authentication,
-                            existente.getMedico().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-
-            if (citaDetalles.getMedico() != null &&
-                    citaDetalles.getMedico().getId() != null &&
-                    !esPropioMedico(
-                            authentication,
-                            citaDetalles.getMedico().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-
-            return ResponseEntity.ok(
-                    citaService.actualizarCita(id, citaDetalles)
-            );
-        }
-
-        return ResponseEntity.status(
-                HttpStatus.FORBIDDEN
-        ).build();
-    }
-
-    // =========================================================
+    // ============================================================
     // ELIMINAR CITA
-    // =========================================================
+    // SOLO ADMIN
+    // ============================================================
+
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(
+    public ResponseEntity<?> eliminar(
             @PathVariable Long id,
             Authentication authentication) {
 
-        Cita existente = citaService.obtenerPorId(id).orElse(null);
-
-        if (existente == null) {
-            return ResponseEntity.notFound().build();
+        if (!autenticado(authentication)) {
+            return forbidden("No autenticado.");
         }
 
-        // ADMIN puede eliminar cualquier cita
-        if (esAdmin(authentication)) {
-            citaService.eliminar(id);
-            return ResponseEntity.noContent().build();
+        if (!"ROLE_ADMIN".equals(obtenerRol(authentication))) {
+
+            return forbidden(
+                    "Solo el administrador puede eliminar citas."
+            );
         }
 
-        // PACIENTE solo puede eliminar sus propias citas
-        if (esPaciente(authentication)) {
+        citaService.eliminar(id);
 
-            if (existente.getUsuario() == null ||
-                    !esPropioUsuario(
-                            authentication,
-                            existente.getUsuario().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-
-            citaService.eliminar(id);
-            return ResponseEntity.noContent().build();
-        }
-
-        // MEDICO solo puede eliminar sus propias citas
-        if (esMedico(authentication)) {
-
-            if (existente.getMedico() == null ||
-                    !esPropioMedico(
-                            authentication,
-                            existente.getMedico().getId())) {
-
-                return ResponseEntity.status(
-                        HttpStatus.FORBIDDEN
-                ).build();
-            }
-
-            citaService.eliminar(id);
-            return ResponseEntity.noContent().build();
-        }
-
-        return ResponseEntity.status(
-                HttpStatus.FORBIDDEN
-        ).build();
+        return ResponseEntity.noContent().build();
     }
 
-    // =========================================================
-    // MÉTODOS DE SEGURIDAD
-    // =========================================================
+    // ============================================================
+    // BUSCAR USUARIO AUTENTICADO
+    // ============================================================
 
-    private boolean esAdmin(Authentication authentication) {
+    private Usuario buscarUsuario(Authentication authentication) {
 
-        return authentication != null &&
-                authentication.getAuthorities().stream()
-                        .anyMatch(a ->
-                                a.getAuthority()
-                                        .equals("ROLE_ADMIN"));
-    }
-
-    private boolean esPaciente(Authentication authentication) {
-
-        return authentication != null &&
-                authentication.getAuthorities().stream()
-                        .anyMatch(a ->
-                                a.getAuthority()
-                                        .equals("ROLE_PACIENTE"));
-    }
-
-    private boolean esMedico(Authentication authentication) {
-
-        return authentication != null &&
-                authentication.getAuthorities().stream()
-                        .anyMatch(a ->
-                                a.getAuthority()
-                                        .equals("ROLE_MEDICO"));
-    }
-
-    private boolean esPropioUsuario(
-            Authentication authentication,
-            Long usuarioId) {
-
-        if (authentication == null ||
-                !(authentication.getPrincipal()
-                        instanceof Usuario usuario)) {
-
-            return false;
+        if (authentication == null) {
+            return null;
         }
 
-        return usuario.getId() != null &&
-                usuario.getId().equals(usuarioId);
-    }
+        String correo = authentication.getName();
 
-    private boolean esPropioMedico(
-            Authentication authentication,
-            Long medicoId) {
-
-        if (authentication == null ||
-                authentication.getName() == null) {
-
-            return false;
+        if (correo == null || correo.trim().isEmpty()) {
+            return null;
         }
 
-        Medico medico = medicoRepository
-                .findByEmailIgnoreCase(
-                        authentication.getName()
-                )
+        correo = correo.trim();
+
+        System.out.println(
+                "Buscando usuario por correo: " + correo
+        );
+
+        Usuario usuario = usuarioRepository
+                .findByCorreo(correo)
                 .orElse(null);
 
-        return medico != null &&
-                medico.getId().equals(medicoId);
+        if (usuario != null) {
+
+            System.out.println(
+                    "Usuario encontrado: ID="
+                            + usuario.getId()
+                            + " | Nombre="
+                            + usuario.getNombre()
+                            + " | Email="
+                            + usuario.getCorreo()
+            );
+
+        } else {
+
+            System.out.println(
+                    "Usuario NO encontrado para correo: "
+                            + correo
+            );
+        }
+
+        return usuario;
+    }
+
+    // ============================================================
+    // BUSCAR MÉDICO DEL USUARIO AUTENTICADO
+    // ============================================================
+
+    private Medico buscarMedico(Authentication authentication) {
+
+        if (authentication == null) {
+            return null;
+        }
+
+        String correo = authentication.getName();
+
+        if (correo == null || correo.trim().isEmpty()) {
+            return null;
+        }
+
+        correo = correo.trim();
+
+        System.out.println(
+                "Buscando médico por correo: " + correo
+        );
+
+        Medico medico = medicoRepository
+                .findByEmailIgnoreCase(correo)
+                .orElse(null);
+
+        if (medico != null) {
+
+            System.out.println(
+                    "Médico encontrado: ID="
+                            + medico.getId()
+                            + " | Nombre="
+                            + medico.getNombre()
+                            + " | Email="
+                            + medico.getEmail()
+            );
+        }
+
+        return medico;
+    }
+
+    // ============================================================
+    // OBTENER ROL
+    // ============================================================
+
+    private String obtenerRol(Authentication authentication) {
+
+        if (authentication == null) {
+            return "";
+        }
+
+        for (GrantedAuthority authority :
+                authentication.getAuthorities()) {
+
+            return authority
+                    .getAuthority()
+                    .trim()
+                    .toUpperCase();
+        }
+
+        return "";
+    }
+
+    // ============================================================
+    // VALIDAR AUTENTICACIÓN
+    // ============================================================
+
+    private boolean autenticado(Authentication authentication) {
+
+        return authentication != null
+                && authentication.isAuthenticated();
+    }
+
+    // ============================================================
+    // RESPUESTA 403
+    // ============================================================
+
+    private ResponseEntity<String> forbidden(String mensaje) {
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(mensaje);
     }
 }

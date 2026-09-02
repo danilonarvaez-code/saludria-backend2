@@ -12,7 +12,8 @@ public class DetalleCitaServiceImpl implements DetalleCitaService {
 
     private final DetalleCitaRepository detalleCitaRepository;
 
-    public DetalleCitaServiceImpl(DetalleCitaRepository detalleCitaRepository) {
+    public DetalleCitaServiceImpl(
+            DetalleCitaRepository detalleCitaRepository) {
         this.detalleCitaRepository = detalleCitaRepository;
     }
 
@@ -27,35 +28,54 @@ public class DetalleCitaServiceImpl implements DetalleCitaService {
     }
 
     @Override
+    public List<DetalleCita> listarPorUsuario(Long usuarioId) {
+        return detalleCitaRepository.findByCitaUsuarioId(usuarioId);
+    }
+
+    @Override
+    public List<DetalleCita> listarPorMedico(Long medicoId) {
+        return detalleCitaRepository.findByCitaMedicoId(medicoId);
+    }
+
+    @Override
     public DetalleCita guardar(DetalleCita detalleCita) {
         return detalleCitaRepository.save(detalleCita);
     }
 
     @Override
-    public DetalleCita actualizar(Long id, DetalleCita detalleCita) {
+    public DetalleCita actualizar(
+            Long id,
+            DetalleCita detalleCita) {
 
         Optional<DetalleCita> existente =
                 detalleCitaRepository.findById(id);
 
-        if (existente.isPresent()) {
-
-            DetalleCita detalleActual = existente.get();
-
-            detalleActual.setCita(detalleCita.getCita());
-            detalleActual.setMotivoConsulta(detalleCita.getMotivoConsulta());
-            detalleActual.setObservaciones(detalleCita.getObservaciones());
-            detalleActual.setDiagnostico(detalleCita.getDiagnostico());
-            detalleActual.setTratamiento(detalleCita.getTratamiento());
-            detalleActual.setEstadoAtencion(detalleCita.getEstadoAtencion());
-
-            return detalleCitaRepository.save(detalleActual);
+        if (existente.isEmpty()) {
+            throw new RuntimeException(
+                    "No se encontró el detalle de cita con ID: " + id
+            );
         }
 
-        return null;
+        DetalleCita actual = existente.get();
+
+        actual.setCita(detalleCita.getCita());
+        actual.setMotivoConsulta(detalleCita.getMotivoConsulta());
+        actual.setObservaciones(detalleCita.getObservaciones());
+        actual.setDiagnostico(detalleCita.getDiagnostico());
+        actual.setTratamiento(detalleCita.getTratamiento());
+        actual.setEstadoAtencion(detalleCita.getEstadoAtencion());
+
+        return detalleCitaRepository.save(actual);
     }
 
     @Override
     public void eliminar(Long id) {
+        if (!detalleCitaRepository.existsById(id)) {
+            throw new RuntimeException(
+                    "No se encontró el detalle de cita con ID: " + id
+            );
+        }
+
         detalleCitaRepository.deleteById(id);
     }
 }

@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.Collections;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -41,7 +41,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String authorizationHeader =
                 request.getHeader("Authorization");
 
-        // No hay token
+        // ==========================================
+        // NO HAY TOKEN
+        // ==========================================
+
         if (authorizationHeader == null ||
                 !authorizationHeader.startsWith("Bearer ")) {
 
@@ -49,64 +52,126 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Extraer token
-        String token = authorizationHeader.substring(7);
+        String token =
+                authorizationHeader.substring(7).trim();
 
         try {
 
-            // Validar JWT y obtener correo
-            String correo = jwtService.obtenerCorreo(token);
+            // ==========================================
+            // OBTENER CORREO DEL TOKEN
+            // ==========================================
 
-            if (correo != null &&
-                    SecurityContextHolder.getContext()
-                            .getAuthentication() == null) {
+            String correo =
+                    jwtService.obtenerCorreo(token);
 
-                // Buscar usuario en la base de datos
-                Usuario usuario = usuarioRepository
-                        .findByCorreo(correo)
-                        .orElse(null);
+            if (correo == null ||
+                    correo.isBlank()) {
 
-                if (usuario != null) {
+                System.out.println(
+                        "JWT ERROR -> No se pudo obtener el correo"
+                );
 
-                    /*
-                     * El rol se toma directamente de la base de datos.
-                     * Así evitamos inconsistencias entre el JWT y MySQL.
-                     */
-                    String rol = usuario.getRol();
-
-                    if (rol != null) {
-
-                        String rolNormalizado = rol.toUpperCase().replace("ROLE_", "");
-                        String autoridad = "ROLE_" + rolNormalizado;
-
-                        List<SimpleGrantedAuthority> authorities =
-                                List.of(
-                                        new SimpleGrantedAuthority(
-                                                autoridad
-                                        )
-                                );
-
-                        UsernamePasswordAuthenticationToken authentication =
-                                new UsernamePasswordAuthenticationToken(
-                                        usuario,
-                                        null,
-                                        authorities
-                                );
-
-                        SecurityContextHolder
-                                .getContext()
-                                .setAuthentication(authentication);
-                    }
-                }
+                filterChain.doFilter(request, response);
+                return;
             }
+
+            correo = correo.trim();
+
+            // ==========================================
+            // BUSCAR USUARIO EN LA BASE DE DATOS
+            // ==========================================
+
+            Usuario usuario =
+                    usuarioRepository
+                            .findByCorreo(correo)
+                            .orElse(null);
+
+            if (usuario == null) {
+
+                System.out.println(
+                        "JWT ERROR -> Usuario no encontrado: "
+                                + correo
+                );
+
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // ==========================================
+            // NORMALIZAR ROL
+            // ==========================================
+
+            String rol = usuario.getRol();
+
+            if (rol == null ||
+                    rol.isBlank()) {
+
+                rol = "PACIENTE";
+            }
+
+            rol = rol
+                    .trim()
+                    .toUpperCase()
+                    .replace("ROLE_", "");
+
+            // ==========================================
+            // CREAR AUTORIDAD
+            // ==========================================
+
+            SimpleGrantedAuthority autoridad =
+                    new SimpleGrantedAuthority(
+                            "ROLE_" + rol
+                    );
+
+            // ==========================================
+            // AUTENTICACIÓN
+            //
+            // IMPORTANTE:
+            // El principal será el CORREO.
+            // Así authentication.getName()
+            // devuelve juan@sanber.com
+            // ==========================================
+
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                            correo,
+                            null,
+                            Collections.singletonList(
+                                    autoridad
+                            )
+                    );
+
+            // ==========================================
+            // GUARDAR AUTENTICACIÓN
+            // ==========================================
+
+            SecurityContextHolder
+                    .getContext()
+                    .setAuthentication(
+                            authentication
+                    );
+
+            System.out.println(
+                    "JWT OK -> Usuario: "
+                            + correo
+                            + " | Rol: ROLE_"
+                            + rol
+            );
 
         } catch (Exception e) {
 
-            // JWT inválido, expirado o manipulado
+            System.out.println(
+                    "JWT inválido: "
+                            + e.getMessage()
+            );
+
             SecurityContextHolder
                     .clearContext();
         }
 
-        filterChain.doFilter(request, response);
+        filterChain.doFilter(
+                request,
+                response
+        );
     }
 }

@@ -18,7 +18,8 @@ public class JwtService {
     private final SecretKey secretKey =
             Keys.hmacShaKeyFor(SECRET_KEY.getBytes(StandardCharsets.UTF_8));
 
-    private final long expiration = 1000 * 60 * 60; // 1 hora
+    // Cambiado a 24 horas para evitar expiraciones frecuentes durante las pruebas
+    private final long expiration = 1000L * 60 * 60 * 24;
 
     /**
      * Genera un token JWT con correo y rol.
